@@ -1,7 +1,6 @@
 # TP4: FreeRTOS
 
 ## Requirements
-- [FreeRTOS](https://www.freertos.org/)
 - arm-none-eabi-gcc : cross compiler toolchain for ARM
 - qemu
 - bear (for compile_commands.json generation)
@@ -31,4 +30,7 @@ arm-none-eabi-gdb gcc/RTOSDemo.axf -tui
 (gdb) target remote localhost:1234
 (gdb) break main
 ```
+
+## References
+- [FreeRTOS](https://www.freertos.org/)
 
