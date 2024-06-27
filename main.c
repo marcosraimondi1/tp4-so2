@@ -83,12 +83,16 @@ void vCreateQueues(void) {
 
 /* Tasks to schedule. */
 static void vSensorTask(void *pvParameters);
+static void vFilterTask(void *pvParameters);
 static void vGraficarTask(void *pvParameter);
 
 void vCreateTasks(void) {
   /* Start the tasks defined within the file. */
   xTaskCreate(vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY, NULL);
+
+  xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL,
+              mainSENSOR_TASK_PRIORITY - 1, NULL);
 
   xTaskCreate(vGraficarTask, "Graficar", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY - 1, NULL);
@@ -111,15 +115,48 @@ static void vSensorTask(void *pvParameters) {
     vTaskDelayUntil(&xLastExecutionTime, mainSENSOR_DELAY);
 
     /* Update sensor temperature reading. */
-    temp = temp + (1 * dir);
-    if (temp == 15) {
+    temp = temp + (2 * dir);
+    if (temp >= 15) {
       dir = -1;
-    } else if (temp == 0) {
+      temp = 15;
+    } else if (temp <= 0) {
       dir = 1;
+      temp = 0;
     }
 
     /* Send temperature to filter task. */
-    xQueueSend(xFilterGraficarQueue, &temp, portMAX_DELAY);
+    xQueueSend(xSensorFilterQueue, &temp, portMAX_DELAY);
+  }
+}
+
+/*-----------------------------------------------------------*/
+
+static void vFilterTask(void *pvParameters) {
+  static int N = 1;
+  static int sum = 0;
+  static int last_value = 0;
+
+  for (;;) {
+    int values[N] = {};
+
+    /* Wait for a message to arrive. */
+    xQueueReceive(xSensorFilterQueue, &last_value, portMAX_DELAY);
+
+    /* Shift values */
+    for (int i = N - 1; i > 0; i--) {
+      values[i] = values[i - 1];
+    }
+    values[0] = last_value;
+
+    /* Calculate average */
+    sum = 0;
+    for (int i = 0; i < N; i++) {
+      sum += values[i];
+    }
+    sum = sum / N;
+
+    /* Send average to graficar task. */
+    xQueueSend(xFilterGraficarQueue, &sum, portMAX_DELAY);
   }
 }
 
