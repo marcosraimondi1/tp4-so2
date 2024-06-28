@@ -27,32 +27,21 @@
 efficient. */
 #define mainBAUD_RATE (19200)
 
-/* Configure the processor and peripherals */
+/* Function prototypes */
 static void prvSetupHardware(void);
-
-/* Create queues used by the tasks. */
 void vCreateQueues(void);
-
-/* Create tasks. */
 void vCreateTasks(void);
-
-/* convert integer to string. */
 void vIntToString(int value, char *string);
-
-/* Configures the high frequency timer for stats. */
-extern void vSetupHighFrequencyTimer(void);
-
-/* Tasks to schedule. */
+void vSetupHighFrequencyTimer(void);
 static void vSensorTask(void *pvParameters);
 static void vFilterTask(void *pvParameters);
-static void vGraficarTask(void *pvParameter);
-static void vMonitorTask(void *pvParameter);
-
+static void vGraficarTask(void *pvParameters);
+static void vMonitorTask(void *pvParameters);
 void vSendStringToUart(const char *string);
-void vPrintSystemStats(unsigned long uxArraySize,
-                       TaskStatus_t *pxTaskStatusArray);
+void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArray);
 int vUpdateN(int N);
 void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value);
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName);
 
 /* Queues used to communicate between tasks. */
 QueueHandle_t xFilterGraficarQueue;
@@ -61,105 +50,113 @@ QueueHandle_t xUartFilterQueue;
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Main function. Initializes hardware, creates queues and tasks, and starts the scheduler.
+ * @return int 0 if the function completes successfully.
+ */
 int main(void) {
   /* Configure the clocks, UART and GPIO. */
   prvSetupHardware();
 
-  vCreateQueues();
-
   vCreateTasks();
-
-  /* Configure the high frequency interrupt used to measure cpu usage. */
-  vSetupHighFrequencyTimer();
 
   /* Start the scheduler. */
   vTaskStartScheduler();
 
-  /* Will only get here if there was insufficient heap to start the scheduler.
-   */
-
+  /* Will only get here if there was insufficient heap to start the scheduler. */
   return 0;
 }
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Configures the clock, OLED display, timer and UART.
+ */
 static void prvSetupHardware(void) {
   /* Setup the PLL. */
-  SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
-                 SYSCTL_XTAL_6MHZ);
+  SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_6MHZ);
 
-  /* Initialise the LCD> */
+  /* Configure the high frequency interrupt used to measure CPU usage. */
+  vSetupHighFrequencyTimer();
+
+  /* Initialise the LCD. */
   OSRAMInit(false);
   OSRAMStringDraw("ICOM SO II", 0, 0);
   OSRAMStringDraw("TP4 LM3S811", 16, 1);
 
-  /* Enable the UART.  */
+  /* Enable the UART. */
   SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
 
   /* Configure the UART for 8-N-1 operation. */
-  UARTConfigSet(UART0_BASE, mainBAUD_RATE,
-                UART_CONFIG_WLEN_8 | UART_CONFIG_PAR_NONE |
-                    UART_CONFIG_STOP_ONE);
+  UARTConfigSet(UART0_BASE, mainBAUD_RATE, UART_CONFIG_WLEN_8 | UART_CONFIG_PAR_NONE | UART_CONFIG_STOP_ONE);
 }
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Creates the tasks and the message queues.
+ */
+void vCreateTasks(void) {
+  /* Create the queues used by the tasks. */
+  vCreateQueues();
+
+  /* Start the tasks defined within the file. */
+  xTaskCreate(vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY, NULL);
+
+  xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 1, NULL);
+
+  xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 1, NULL);
+
+  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 2, NULL);
+}
+
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Creates the queues used by the tasks.
+ */
 void vCreateQueues(void) {
   xFilterGraficarQueue = xQueueCreate(10, sizeof(int));
   xSensorFilterQueue = xQueueCreate(10, sizeof(int));
   xUartFilterQueue = xQueueCreate(10, sizeof(int));
 
-  if (xFilterGraficarQueue == NULL || xSensorFilterQueue == NULL ||
-      xUartFilterQueue == NULL) {
-    /* One or more queues were not created successfully as there was not
-    enough heap memory available. */
-    for (;;)
-      ;
+  if (xFilterGraficarQueue == NULL || xSensorFilterQueue == NULL || xUartFilterQueue == NULL) {
+    /* One or more queues were not created successfully as there was not enough heap memory available. */
+    for (;;);
   }
 }
 
 /*-----------------------------------------------------------*/
 
-void vCreateTasks(void) {
-  /* Start the tasks defined within the file. */
-  xTaskCreate(vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL,
-              mainSENSOR_TASK_PRIORITY, NULL);
-
-  xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL,
-              mainSENSOR_TASK_PRIORITY - 1, NULL);
-
-  xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL,
-              mainSENSOR_TASK_PRIORITY - 1, NULL);
-
-  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE, NULL,
-              mainSENSOR_TASK_PRIORITY - 2, NULL);
-}
-
-/*-----------------------------------------------------------*/
-
-// https://www.freertos.org/uxTaskGetSystemState.html
+/**
+ * @brief Monitors the system and prints system stats.
+ * @param pvParameter unused.
+ */
 static void vMonitorTask(void *pvParameter) {
   TickType_t xLastExecutionTime;
   xLastExecutionTime = xTaskGetTickCount();
 
+  // allocate enough space for every task
   TaskStatus_t *pxTaskStatusArray;
   volatile UBaseType_t uxArraySize;
   uxArraySize = uxTaskGetNumberOfTasks();
   pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
   if (pxTaskStatusArray == NULL) {
-    for (;;)
-      ;
+    for (;;);
   }
 
   for (;;) {
     vTaskDelayUntil(&xLastExecutionTime, mainMONITOR_DELAY);
-
     vPrintSystemStats(uxArraySize, pxTaskStatusArray);
   }
 }
 
-void vPrintSystemStats(unsigned long uxArraySize,
-                       TaskStatus_t *pxTaskStatusArray) {
+/**
+ * @brief Prints the system stats to UART.
+ * @param uxArraySize Size of the task status array.
+ * @param pxTaskStatusArray Array of task statuses.
+ */
+void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArray) {
   volatile UBaseType_t x;
   unsigned int ulTotalRunTime, ulStatsAsPercentage;
   char temp[10] = "";
@@ -168,8 +165,7 @@ void vPrintSystemStats(unsigned long uxArraySize,
   vSendStringToUart("--------- System Monitor ---------\r\n");
   vSendStringToUart("Task\tCPU %\tStatus\tStack HighWaterMark\r\n");
 
-  uxArraySize =
-      uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+  uxArraySize = uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
   ulTotalRunTime /= 100;
 
   for (x = 0; x < uxArraySize; x++) {
@@ -177,8 +173,7 @@ void vPrintSystemStats(unsigned long uxArraySize,
     vSendStringToUart("\t");
 
     if (ulTotalRunTime > 0) {
-      ulStatsAsPercentage =
-          pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
+      ulStatsAsPercentage = pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
       if (ulStatsAsPercentage == 0) {
         vSendStringToUart("<1");
       } else {
@@ -219,6 +214,10 @@ void vPrintSystemStats(unsigned long uxArraySize,
   }
 }
 
+/**
+ * @brief Sends a string to the UART.
+ * @param string Pointer to the null terminated string to send.
+ */
 void vSendStringToUart(const char *string) {
   while (*string != '\0') {
     UARTCharPut(UART0_BASE, *string);
@@ -228,11 +227,14 @@ void vSendStringToUart(const char *string) {
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Reads sensor data and sends it to the filter task.
+ * @param pvParameters unused.
+ */
 static void vSensorTask(void *pvParameters) {
   TickType_t xLastExecutionTime;
 
-  /* Initialise xLastExecutionTime so the first call to vTaskDelayUntil()
-  works correctly. */
+  /* Initialise xLastExecutionTime so the first call to vTaskDelayUntil() works correctly. */
   xLastExecutionTime = xTaskGetTickCount();
 
   int temp = 0;
@@ -242,7 +244,7 @@ static void vSensorTask(void *pvParameters) {
     /* Perform this check every mainSENSOR_DELAY milliseconds. */
     vTaskDelayUntil(&xLastExecutionTime, mainSENSOR_DELAY);
 
-    /* Update sensor temperature reading. */
+    /* Update sensor temperature reading. Triangular signal */
     temp = temp + (2 * dir);
     if (temp >= 15) {
       dir = -1;
@@ -259,6 +261,10 @@ static void vSensorTask(void *pvParameters) {
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Filters the sensor data and sends the average value to the graficar task.
+ * @param pvParameters unused.
+ */
 static void vFilterTask(void *pvParameters) {
   static int values[MAX_FILTER_SIZE] = {0};
   int N = 1;
@@ -289,6 +295,11 @@ static void vFilterTask(void *pvParameters) {
   }
 }
 
+/**
+ * @brief Updates the filter size N based on UART commands.
+ * @param currentN The current filter size.
+ * @return int The updated filter size.
+ */
 int vUpdateN(int currentN) {
   while (UARTCharsAvail(UART0_BASE)) {
     char cmd = UARTCharGet(UART0_BASE);
@@ -309,6 +320,10 @@ int vUpdateN(int currentN) {
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Receives filtered data and displays it on the OLED.
+ * @param pvParameters unused
+ */
 static void vGraficarTask(void *pvParameters) {
   static unsigned char signal[OLED_WIDTH * 2] = {0};
   int value = 0;
@@ -327,6 +342,11 @@ static void vGraficarTask(void *pvParameters) {
   }
 }
 
+/**
+ * @brief Adds a value to the OLED signal array and shifts the existing values.
+ * @param image The signal array.
+ * @param value The value to add.
+ */
 void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value) {
   // shift signal
   for (int i = OLED_WIDTH - 1; i > 0; i--) {
@@ -337,7 +357,7 @@ void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value) {
   image[OLED_WIDTH] = 0;
   image[0] = 0;
 
-  // add new value
+  // add new value in the correct height position
   if (value < 8) {
     image[OLED_WIDTH] = (1 << (7 - value));
   } else {
@@ -347,6 +367,11 @@ void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value) {
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Converts an integer to a string.
+ * @param value The integer value.
+ * @param string The string buffer to hold the converted value.
+ */
 void vIntToString(int value, char *string) {
   int i = 0;
   if (value == 0) {
@@ -370,6 +395,11 @@ void vIntToString(int value, char *string) {
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @brief Hook function for stack overflow.
+ * @param xTask Task handle.
+ * @param pcTaskName Task name.
+ */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   vSendStringToUart("\nSTACK OVERFLOW on '");
   vSendStringToUart(pcTaskName);
