@@ -3,6 +3,7 @@
 
 /* Scheduler includes. */
 #include "FreeRTOS.h"
+#include "hw_memmap.h"
 #include "portable.h"
 #include "queue.h"
 #include "semphr.h"
@@ -244,25 +245,28 @@ static void vSensorTask(void *pvParameters) {
 }
 
 /*-----------------------------------------------------------*/
+#define MAX_FILTER_SIZE 50
+int vUpdateN(int N);
 
 static void vFilterTask(void *pvParameters) {
+  static int values[MAX_FILTER_SIZE] = {0};
   int N = 1;
   int sum = 0;
   int last_value = 0;
 
   for (;;) {
-    int values[N] = {};
-
     /* Wait for a message to arrive. */
     xQueueReceive(xSensorFilterQueue, &last_value, portMAX_DELAY);
 
+    N = vUpdateN(N);
+
     /* Shift values */
-    for (int i = N - 1; i > 0; i--) {
+    for (int i = MAX_FILTER_SIZE - 1; i > 0; i--) {
       values[i] = values[i - 1];
     }
     values[0] = last_value;
 
-    /* Calculate average */
+    /* Calculate average - only use N values in filter */
     sum = 0;
     for (int i = 0; i < N; i++) {
       sum += values[i];
@@ -272,6 +276,24 @@ static void vFilterTask(void *pvParameters) {
     /* Send average to graficar task. */
     xQueueSend(xFilterGraficarQueue, &sum, portMAX_DELAY);
   }
+}
+
+int vUpdateN(int currentN) {
+  while (UARTCharsAvail(UART0_BASE)) {
+    char cmd = UARTCharGet(UART0_BASE);
+    if (cmd == 'u') {
+      currentN++;
+      if (currentN > MAX_FILTER_SIZE) {
+        currentN = MAX_FILTER_SIZE;
+      }
+    } else if (cmd == 'd') {
+      currentN--;
+      if (currentN < 1) {
+        currentN = 1;
+      }
+    }
+  }
+  return currentN;
 }
 
 /*-----------------------------------------------------------*/
