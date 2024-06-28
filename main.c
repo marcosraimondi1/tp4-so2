@@ -10,6 +10,10 @@
 #include "task.h"
 #include "uart.h"
 
+#define OLED_WIDTH 96
+#define OLED_HEIGHT 16
+#define MAX_FILTER_SIZE 50
+
 /* Delay between cycles of the 'sensor' task. */
 #define mainSENSOR_DELAY ((TickType_t)100 / portTICK_PERIOD_MS)
 
@@ -37,6 +41,23 @@ void vIntToString(int value, char *string);
 
 /* Configures the high frequency timer for stats. */
 extern void vSetupHighFrequencyTimer(void);
+
+/* Tasks to schedule. */
+static void vSensorTask(void *pvParameters);
+static void vFilterTask(void *pvParameters);
+static void vGraficarTask(void *pvParameter);
+static void vMonitorTask(void *pvParameter);
+
+void vSendStringToUart(const char *string);
+void vPrintSystemStats(unsigned long uxArraySize,
+                       TaskStatus_t *pxTaskStatusArray);
+int vUpdateN(int N);
+void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value);
+
+/* Queues used to communicate between tasks. */
+QueueHandle_t xFilterGraficarQueue;
+QueueHandle_t xSensorFilterQueue;
+QueueHandle_t xUartFilterQueue;
 
 /*-----------------------------------------------------------*/
 
@@ -83,11 +104,6 @@ static void prvSetupHardware(void) {
 
 /*-----------------------------------------------------------*/
 
-/* Queues used to communicate between tasks. */
-QueueHandle_t xFilterGraficarQueue;
-QueueHandle_t xSensorFilterQueue;
-QueueHandle_t xUartFilterQueue;
-
 void vCreateQueues(void) {
   xFilterGraficarQueue = xQueueCreate(10, sizeof(int));
   xSensorFilterQueue = xQueueCreate(10, sizeof(int));
@@ -103,12 +119,6 @@ void vCreateQueues(void) {
 }
 
 /*-----------------------------------------------------------*/
-
-/* Tasks to schedule. */
-static void vSensorTask(void *pvParameters);
-static void vFilterTask(void *pvParameters);
-static void vGraficarTask(void *pvParameter);
-static void vMonitorTask(void *pvParameter);
 
 void vCreateTasks(void) {
   /* Start the tasks defined within the file. */
@@ -126,7 +136,6 @@ void vCreateTasks(void) {
 }
 
 /*-----------------------------------------------------------*/
-void vSendStringToUart(const char *string);
 
 // https://www.freertos.org/uxTaskGetSystemState.html
 static void vMonitorTask(void *pvParameter) {
@@ -134,8 +143,7 @@ static void vMonitorTask(void *pvParameter) {
   xLastExecutionTime = xTaskGetTickCount();
 
   TaskStatus_t *pxTaskStatusArray;
-  volatile UBaseType_t uxArraySize, x;
-  unsigned int ulTotalRunTime, ulStatsAsPercentage;
+  volatile UBaseType_t uxArraySize;
   uxArraySize = uxTaskGetNumberOfTasks();
   pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
   if (pxTaskStatusArray == NULL) {
@@ -146,63 +154,68 @@ static void vMonitorTask(void *pvParameter) {
   for (;;) {
     vTaskDelayUntil(&xLastExecutionTime, mainMONITOR_DELAY);
 
-    vSendStringToUart("\x1B[2J\x1B[H"); // ANSI command to clear screen
+    vPrintSystemStats(uxArraySize, pxTaskStatusArray);
+  }
+}
 
-    vSendStringToUart("--------- System Monitor ---------\r\n");
-    vSendStringToUart("Task\tCPU %\tStatus\tStack HighWaterMark\r\n");
+void vPrintSystemStats(unsigned long uxArraySize,
+                       TaskStatus_t *pxTaskStatusArray) {
+  volatile UBaseType_t x;
+  unsigned int ulTotalRunTime, ulStatsAsPercentage;
+  char temp[10] = "";
 
-    uxArraySize =
-        uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+  vSendStringToUart("\x1B[2J\x1B[H"); // ANSI command to clear screen
+  vSendStringToUart("--------- System Monitor ---------\r\n");
+  vSendStringToUart("Task\tCPU %\tStatus\tStack HighWaterMark\r\n");
 
-    ulTotalRunTime /= 100; // convert to percentage
+  uxArraySize =
+      uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+  ulTotalRunTime /= 100;
 
-    for (x = 0; x < uxArraySize; x++) {
-      vSendStringToUart(pxTaskStatusArray[x].pcTaskName);
-      vSendStringToUart("\t");
+  for (x = 0; x < uxArraySize; x++) {
+    vSendStringToUart(pxTaskStatusArray[x].pcTaskName);
+    vSendStringToUart("\t");
 
-      if (ulTotalRunTime > 0) {
-        ulStatsAsPercentage =
-            pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
-        if (ulStatsAsPercentage == 0) {
-          vSendStringToUart("<1");
-        } else {
-          char temp[10] = "";
-          vIntToString(ulStatsAsPercentage, temp);
-          vSendStringToUart(temp);
-        }
+    if (ulTotalRunTime > 0) {
+      ulStatsAsPercentage =
+          pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
+      if (ulStatsAsPercentage == 0) {
+        vSendStringToUart("<1");
       } else {
-        vSendStringToUart("-");
+        vIntToString(ulStatsAsPercentage, temp);
+        vSendStringToUart(temp);
       }
-
-      vSendStringToUart("\t");
-
-      switch (pxTaskStatusArray[x].eCurrentState) {
-      case eRunning:
-        vSendStringToUart("Running");
-        break;
-      case eReady:
-        vSendStringToUart("Ready");
-        break;
-      case eBlocked:
-        vSendStringToUart("Blocked");
-        break;
-      case eSuspended:
-        vSendStringToUart("Suspended");
-        break;
-      case eDeleted:
-        vSendStringToUart("Deleted");
-        break;
-      case eInvalid:
-        vSendStringToUart("Invalid");
-        break;
-      }
-
-      vSendStringToUart("\t");
-      char temp[10] = "";
-      vIntToString(pxTaskStatusArray[x].usStackHighWaterMark, temp);
-      vSendStringToUart(temp);
-      vSendStringToUart("\r\n");
+    } else {
+      vSendStringToUart("-");
     }
+
+    vSendStringToUart("\t");
+
+    switch (pxTaskStatusArray[x].eCurrentState) {
+    case eRunning:
+      vSendStringToUart("Running");
+      break;
+    case eReady:
+      vSendStringToUart("Ready");
+      break;
+    case eBlocked:
+      vSendStringToUart("Blocked");
+      break;
+    case eSuspended:
+      vSendStringToUart("Suspended");
+      break;
+    case eDeleted:
+      vSendStringToUart("Deleted");
+      break;
+    case eInvalid:
+      vSendStringToUart("Invalid");
+      break;
+    }
+
+    vSendStringToUart("\t");
+    vIntToString(pxTaskStatusArray[x].usStackHighWaterMark, temp);
+    vSendStringToUart(temp);
+    vSendStringToUart("\r\n");
   }
 }
 
@@ -245,8 +258,6 @@ static void vSensorTask(void *pvParameters) {
 }
 
 /*-----------------------------------------------------------*/
-#define MAX_FILTER_SIZE 50
-int vUpdateN(int N);
 
 static void vFilterTask(void *pvParameters) {
   static int values[MAX_FILTER_SIZE] = {0};
@@ -298,11 +309,6 @@ int vUpdateN(int currentN) {
 
 /*-----------------------------------------------------------*/
 
-#define OLED_WIDTH 96
-#define OLED_HEIGHT 16
-
-void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value);
-
 static void vGraficarTask(void *pvParameters) {
   static unsigned char signal[OLED_WIDTH * 2] = {0};
   int value = 0;
@@ -341,13 +347,6 @@ void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value) {
 
 /*-----------------------------------------------------------*/
 
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
-  for (;;)
-    ;
-}
-
-/*-----------------------------------------------------------*/
-
 void vIntToString(int value, char *string) {
   int i = 0;
   if (value == 0) {
@@ -367,4 +366,14 @@ void vIntToString(int value, char *string) {
   }
 
   string[i] = '\0';
+}
+
+/*-----------------------------------------------------------*/
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+  vSendStringToUart("\nSTACK OVERFLOW on '");
+  vSendStringToUart(pcTaskName);
+  vSendStringToUart("' task\r\n");
+  for (;;) {
+  }
 }
