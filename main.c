@@ -3,12 +3,17 @@
 
 /* Scheduler includes. */
 #include "FreeRTOS.h"
+#include "portable.h"
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
+#include "uart.h"
 
 /* Delay between cycles of the 'sensor' task. */
 #define mainSENSOR_DELAY ((TickType_t)100 / portTICK_PERIOD_MS)
+
+/* Delay between cycles of the 'monitor' task. */
+#define mainMONITOR_DELAY ((TickType_t)1000 / portTICK_PERIOD_MS)
 
 /* Task priorities. */
 #define mainSENSOR_TASK_PRIORITY (tskIDLE_PRIORITY + 3)
@@ -16,6 +21,11 @@
 /* Misc. */
 #define mainQUEUE_SIZE (10)
 #define mainNO_DELAY ((TickType_t)0)
+
+/* UART configuration - note this does not use the FIFO so is not very
+efficient. */
+#define mainBAUD_RATE (19200)
+#define mainFIFO_SET (0x10)
 
 /* Configure the processor and peripherals */
 static void prvSetupHardware(void);
@@ -25,6 +35,9 @@ void vCreateQueues(void);
 
 /* Create tasks. */
 void vCreateTasks(void);
+
+/* convert integer to string. */
+void vIntToString(int value, char *string);
 
 /*-----------------------------------------------------------*/
 
@@ -56,6 +69,14 @@ static void prvSetupHardware(void) {
   OSRAMInit(false);
   OSRAMStringDraw("ICOM SO II", 0, 0);
   OSRAMStringDraw("TP4 LM3S811", 16, 1);
+
+  /* Enable the UART.  */
+  SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+
+  /* Configure the UART for 8-N-1 operation. */
+  UARTConfigSet(UART0_BASE, mainBAUD_RATE,
+                UART_CONFIG_WLEN_8 | UART_CONFIG_PAR_NONE |
+                    UART_CONFIG_STOP_ONE);
 }
 
 /*-----------------------------------------------------------*/
@@ -85,6 +106,7 @@ void vCreateQueues(void) {
 static void vSensorTask(void *pvParameters);
 static void vFilterTask(void *pvParameters);
 static void vGraficarTask(void *pvParameter);
+static void vMonitorTask(void *pvParameter);
 
 void vCreateTasks(void) {
   /* Start the tasks defined within the file. */
@@ -94,8 +116,96 @@ void vCreateTasks(void) {
   xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY - 1, NULL);
 
-  xTaskCreate(vGraficarTask, "Graficar", configMINIMAL_STACK_SIZE, NULL,
+  xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY - 1, NULL);
+
+  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE * 4, NULL,
+              mainSENSOR_TASK_PRIORITY - 2, NULL);
+}
+
+/*-----------------------------------------------------------*/
+void vSendStringToUart(const char *string);
+
+// https://www.freertos.org/uxTaskGetSystemState.html
+static void vMonitorTask(void *pvParameter) {
+  TickType_t xLastExecutionTime;
+  xLastExecutionTime = xTaskGetTickCount();
+
+  TaskStatus_t *pxTaskStatusArray;
+  volatile UBaseType_t uxArraySize, x;
+  unsigned int ulTotalRunTime, ulStatsAsPercentage;
+  uxArraySize = uxTaskGetNumberOfTasks();
+  pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
+  if (pxTaskStatusArray == NULL) {
+    for (;;)
+      ;
+  }
+
+  for (;;) {
+    vTaskDelayUntil(&xLastExecutionTime, mainMONITOR_DELAY);
+
+    vSendStringToUart("\x1B[2J\x1B[H"); // ANSI command to clear screen
+
+    vSendStringToUart("--------- System Monitor ---------\r\n");
+    vSendStringToUart("Task\tCPU\tStatus\tStack HighWaterMark\r\n");
+
+    uxArraySize =
+        uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+
+    ulTotalRunTime /= 100; // convert to percentage
+
+    for (x = 0; x < uxArraySize; x++) {
+
+      vSendStringToUart(pxTaskStatusArray[x].pcTaskName);
+      vSendStringToUart("\t");
+
+      if (ulTotalRunTime > 0) {
+        char temp[10] = "";
+        ulStatsAsPercentage =
+            pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
+        vIntToString(ulStatsAsPercentage, temp);
+        vSendStringToUart(temp);
+      } else {
+        vSendStringToUart("0");
+      }
+
+      vSendStringToUart("\t");
+
+      switch (pxTaskStatusArray[x].eCurrentState) {
+      case eRunning:
+        vSendStringToUart("Running");
+        break;
+      case eReady:
+        vSendStringToUart("Ready");
+        break;
+      case eBlocked:
+        vSendStringToUart("Blocked");
+        break;
+      case eSuspended:
+        vSendStringToUart("Suspended");
+        break;
+      case eDeleted:
+        vSendStringToUart("Deleted");
+        break;
+      case eInvalid:
+        vSendStringToUart("Invalid");
+        break;
+      }
+
+      vSendStringToUart("\t");
+      char temp[10] = "";
+      vIntToString(pxTaskStatusArray[x].usStackHighWaterMark, temp);
+      vSendStringToUart(temp);
+      vSendStringToUart("\r\n");
+    }
+  }
+}
+
+void vSendStringToUart(const char *string) {
+  while (*string != '\0') {
+    UARTCharPut(UART0_BASE, *string);
+    string++;
+  }
 }
 
 /*-----------------------------------------------------------*/
@@ -213,24 +323,38 @@ void vUART_ISR(void) {
 
   /* Clear the interrupt. */
   UARTIntClear(UART0_BASE, ulStatus);
-
-  /* Was a Rx interrupt pending? */
-  if (ulStatus & UART_INT_RX) {
-    /* Read the character from the UART and send it to the queue. */
-    // xQueueSendFromISR(xRxedChars, &HWREG(UART0_BASE + UART_O_DR), pdFALSE);
-  }
 }
 
 /*-----------------------------------------------------------*/
 
-void vGPIO_ISR(void) {
-  portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+void vGPIO_ISR(void) {}
 
-  /* Clear the interrupt. */
-  // GPIOPinIntClear(GPIO_PORTC_BASE, mainPUSH_BUTTON);
+/*-----------------------------------------------------------*/
 
-  /* Wake the button handler task. */
-  // xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
-  //
-  // portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+  for (;;)
+    ;
+}
+
+/*-----------------------------------------------------------*/
+
+void vIntToString(int value, char *string) {
+  int i = 0;
+  if (value == 0) {
+    string[i++] = '0';
+  }
+
+  while (value != 0) {
+    string[i++] = value % 10 + '0';
+    value = value / 10;
+  }
+
+  // reverse string
+  for (int j = 0; j < i / 2; j++) {
+    char temp = string[j];
+    string[j] = string[i - j - 1];
+    string[i - j - 1] = temp;
+  }
+
+  string[i] = '\0';
 }
