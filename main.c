@@ -18,14 +18,9 @@
 /* Task priorities. */
 #define mainSENSOR_TASK_PRIORITY (tskIDLE_PRIORITY + 3)
 
-/* Misc. */
-#define mainQUEUE_SIZE (10)
-#define mainNO_DELAY ((TickType_t)0)
-
 /* UART configuration - note this does not use the FIFO so is not very
 efficient. */
 #define mainBAUD_RATE (19200)
-#define mainFIFO_SET (0x10)
 
 /* Configure the processor and peripherals */
 static void prvSetupHardware(void);
@@ -119,7 +114,7 @@ void vCreateTasks(void) {
   xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY - 1, NULL);
 
-  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE * 4, NULL,
+  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE, NULL,
               mainSENSOR_TASK_PRIORITY - 2, NULL);
 }
 
@@ -312,22 +307,6 @@ void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value) {
     image[0] = (1 << (15 - value));
   }
 }
-
-/*-----------------------------------------------------------*/
-
-void vUART_ISR(void) {
-  unsigned long ulStatus;
-
-  /* What caused the interrupt. */
-  ulStatus = UARTIntStatus(UART0_BASE, pdTRUE);
-
-  /* Clear the interrupt. */
-  UARTIntClear(UART0_BASE, ulStatus);
-}
-
-/*-----------------------------------------------------------*/
-
-void vGPIO_ISR(void) {}
 
 /*-----------------------------------------------------------*/
 
