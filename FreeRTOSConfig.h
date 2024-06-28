@@ -53,6 +53,13 @@
 #define configCHECK_FOR_STACK_OVERFLOW 2
 #define configUSE_TRACE_FACILITY 1
 #define INCLUDE_xTaskGetHandle 1
+#define configGENERATE_RUN_TIME_STATS 1
+extern volatile unsigned long ulHighFrequencyTimerTicks;
+/* ulHighFrequencyTimerTicks is already being incremented at 20KHz.  Just set
+its value back to 0. */
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()                               \
+  (ulHighFrequencyTimerTicks = 0UL)
+#define portGET_RUN_TIME_COUNTER_VALUE() ulHighFrequencyTimerTicks
 /*-----------------------------------------------------------*/
 
 #define configUSE_16_BIT_TICKS 0

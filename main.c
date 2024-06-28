@@ -34,6 +34,9 @@ void vCreateTasks(void);
 /* convert integer to string. */
 void vIntToString(int value, char *string);
 
+/* Configures the high frequency timer for stats. */
+extern void vSetupHighFrequencyTimer(void);
+
 /*-----------------------------------------------------------*/
 
 int main(void) {
@@ -43,6 +46,9 @@ int main(void) {
   vCreateQueues();
 
   vCreateTasks();
+
+  /* Configure the high frequency interrupt used to measure cpu usage. */
+  vSetupHighFrequencyTimer();
 
   /* Start the scheduler. */
   vTaskStartScheduler();
@@ -142,7 +148,7 @@ static void vMonitorTask(void *pvParameter) {
     vSendStringToUart("\x1B[2J\x1B[H"); // ANSI command to clear screen
 
     vSendStringToUart("--------- System Monitor ---------\r\n");
-    vSendStringToUart("Task\tCPU\tStatus\tStack HighWaterMark\r\n");
+    vSendStringToUart("Task\tCPU %\tStatus\tStack HighWaterMark\r\n");
 
     uxArraySize =
         uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
@@ -150,18 +156,21 @@ static void vMonitorTask(void *pvParameter) {
     ulTotalRunTime /= 100; // convert to percentage
 
     for (x = 0; x < uxArraySize; x++) {
-
       vSendStringToUart(pxTaskStatusArray[x].pcTaskName);
       vSendStringToUart("\t");
 
       if (ulTotalRunTime > 0) {
-        char temp[10] = "";
         ulStatsAsPercentage =
             pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
-        vIntToString(ulStatsAsPercentage, temp);
-        vSendStringToUart(temp);
+        if (ulStatsAsPercentage == 0) {
+          vSendStringToUart("<1");
+        } else {
+          char temp[10] = "";
+          vIntToString(ulStatsAsPercentage, temp);
+          vSendStringToUart(temp);
+        }
       } else {
-        vSendStringToUart("0");
+        vSendStringToUart("-");
       }
 
       vSendStringToUart("\t");
@@ -212,8 +221,8 @@ static void vSensorTask(void *pvParameters) {
   works correctly. */
   xLastExecutionTime = xTaskGetTickCount();
 
-  static int temp = 0;
-  static int dir = 1;
+  int temp = 0;
+  int dir = 1;
 
   for (;;) {
     /* Perform this check every mainSENSOR_DELAY milliseconds. */
@@ -237,9 +246,9 @@ static void vSensorTask(void *pvParameters) {
 /*-----------------------------------------------------------*/
 
 static void vFilterTask(void *pvParameters) {
-  static int N = 1;
-  static int sum = 0;
-  static int last_value = 0;
+  int N = 1;
+  int sum = 0;
+  int last_value = 0;
 
   for (;;) {
     int values[N] = {};
@@ -274,7 +283,7 @@ void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value);
 
 static void vGraficarTask(void *pvParameters) {
   static unsigned char signal[OLED_WIDTH * 2] = {0};
-  static int value = 0;
+  int value = 0;
 
   OSRAMClear();
   addValueToSignal(signal, 0);

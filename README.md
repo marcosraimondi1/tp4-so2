@@ -31,6 +31,12 @@ arm-none-eabi-gdb gcc/RTOSDemo.axf -tui
 (gdb) break main
 ```
 
+## Developing
+
+### Handling Interrupts
+To set an interrupt handler for a custom ISR (Interrupt Service Routine) you need to register
+the ISR function in the vector table provided in the startup file.
+
 ## References
 - [FreeRTOS](https://www.freertos.org/)
 

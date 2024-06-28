@@ -34,6 +34,7 @@ CFLAGS+=-g -O0
 VPATH=${RTOS_SOURCE_DIR}:${RTOS_SOURCE_DIR}/portable/MemMang:${RTOS_SOURCE_DIR}/portable/GCC/ARM_CM3:${DEMO_SOURCE_DIR}:init:hw_include
 
 OBJS=${COMPILER}/main.o	\
+	  ${COMPILER}/timertest.o    \
 	  ${COMPILER}/list.o    \
       ${COMPILER}/queue.o   \
       ${COMPILER}/tasks.o   \
