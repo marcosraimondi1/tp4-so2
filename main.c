@@ -38,7 +38,8 @@ static void vFilterTask(void *pvParameters);
 static void vGraficarTask(void *pvParameters);
 static void vMonitorTask(void *pvParameters);
 void vSendStringToUart(const char *string);
-void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArray);
+void vPrintSystemStats(unsigned long uxArraySize,
+                       TaskStatus_t *pxTaskStatusArray);
 int vUpdateN(int N);
 void addValueToSignal(unsigned char image[OLED_WIDTH * 2], int value);
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName);
@@ -51,7 +52,8 @@ QueueHandle_t xUartFilterQueue;
 /*-----------------------------------------------------------*/
 
 /**
- * @brief Main function. Initializes hardware, creates queues and tasks, and starts the scheduler.
+ * @brief Main function. Initializes hardware, creates queues and tasks, and
+ * starts the scheduler.
  * @return int 0 if the function completes successfully.
  */
 int main(void) {
@@ -63,7 +65,8 @@ int main(void) {
   /* Start the scheduler. */
   vTaskStartScheduler();
 
-  /* Will only get here if there was insufficient heap to start the scheduler. */
+  /* Will only get here if there was insufficient heap to start the scheduler.
+   */
   return 0;
 }
 
@@ -74,7 +77,8 @@ int main(void) {
  */
 static void prvSetupHardware(void) {
   /* Setup the PLL. */
-  SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_6MHZ);
+  SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
+                 SYSCTL_XTAL_6MHZ);
 
   /* Configure the high frequency interrupt used to measure CPU usage. */
   vSetupHighFrequencyTimer();
@@ -88,7 +92,9 @@ static void prvSetupHardware(void) {
   SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
 
   /* Configure the UART for 8-N-1 operation. */
-  UARTConfigSet(UART0_BASE, mainBAUD_RATE, UART_CONFIG_WLEN_8 | UART_CONFIG_PAR_NONE | UART_CONFIG_STOP_ONE);
+  UARTConfigSet(UART0_BASE, mainBAUD_RATE,
+                UART_CONFIG_WLEN_8 | UART_CONFIG_PAR_NONE |
+                    UART_CONFIG_STOP_ONE);
 }
 
 /*-----------------------------------------------------------*/
@@ -101,13 +107,17 @@ void vCreateTasks(void) {
   vCreateQueues();
 
   /* Start the tasks defined within the file. */
-  xTaskCreate(vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY, NULL);
+  xTaskCreate(vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL,
+              mainSENSOR_TASK_PRIORITY, NULL);
 
-  xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 1, NULL);
+  xTaskCreate(vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL,
+              mainSENSOR_TASK_PRIORITY - 1, NULL);
 
-  xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 1, NULL);
+  xTaskCreate(vGraficarTask, "Grafic", configMINIMAL_STACK_SIZE, NULL,
+              mainSENSOR_TASK_PRIORITY - 1, NULL);
 
-  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE, NULL, mainSENSOR_TASK_PRIORITY - 2, NULL);
+  xTaskCreate(vMonitorTask, "Monitor", configMINIMAL_STACK_SIZE, NULL,
+              mainSENSOR_TASK_PRIORITY - 2, NULL);
 }
 
 /*-----------------------------------------------------------*/
@@ -120,9 +130,12 @@ void vCreateQueues(void) {
   xSensorFilterQueue = xQueueCreate(10, sizeof(int));
   xUartFilterQueue = xQueueCreate(10, sizeof(int));
 
-  if (xFilterGraficarQueue == NULL || xSensorFilterQueue == NULL || xUartFilterQueue == NULL) {
-    /* One or more queues were not created successfully as there was not enough heap memory available. */
-    for (;;);
+  if (xFilterGraficarQueue == NULL || xSensorFilterQueue == NULL ||
+      xUartFilterQueue == NULL) {
+    /* One or more queues were not created successfully as there was not enough
+     * heap memory available. */
+    for (;;)
+      ;
   }
 }
 
@@ -142,7 +155,8 @@ static void vMonitorTask(void *pvParameter) {
   uxArraySize = uxTaskGetNumberOfTasks();
   pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
   if (pxTaskStatusArray == NULL) {
-    for (;;);
+    for (;;)
+      ;
   }
 
   for (;;) {
@@ -156,7 +170,8 @@ static void vMonitorTask(void *pvParameter) {
  * @param uxArraySize Size of the task status array.
  * @param pxTaskStatusArray Array of task statuses.
  */
-void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArray) {
+void vPrintSystemStats(unsigned long uxArraySize,
+                       TaskStatus_t *pxTaskStatusArray) {
   volatile UBaseType_t x;
   unsigned int ulTotalRunTime, ulStatsAsPercentage;
   char temp[10] = "";
@@ -165,7 +180,8 @@ void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArra
   vSendStringToUart("--------- System Monitor ---------\r\n");
   vSendStringToUart("Task\tCPU %\tStatus\tStack HighWaterMark\r\n");
 
-  uxArraySize = uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+  uxArraySize =
+      uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
   ulTotalRunTime /= 100;
 
   for (x = 0; x < uxArraySize; x++) {
@@ -173,7 +189,8 @@ void vPrintSystemStats(unsigned long uxArraySize, TaskStatus_t *pxTaskStatusArra
     vSendStringToUart("\t");
 
     if (ulTotalRunTime > 0) {
-      ulStatsAsPercentage = pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
+      ulStatsAsPercentage =
+          pxTaskStatusArray[x].ulRunTimeCounter / ulTotalRunTime;
       if (ulStatsAsPercentage == 0) {
         vSendStringToUart("<1");
       } else {
@@ -234,7 +251,8 @@ void vSendStringToUart(const char *string) {
 static void vSensorTask(void *pvParameters) {
   TickType_t xLastExecutionTime;
 
-  /* Initialise xLastExecutionTime so the first call to vTaskDelayUntil() works correctly. */
+  /* Initialise xLastExecutionTime so the first call to vTaskDelayUntil() works
+   * correctly. */
   xLastExecutionTime = xTaskGetTickCount();
 
   int temp = 0;
@@ -262,7 +280,8 @@ static void vSensorTask(void *pvParameters) {
 /*-----------------------------------------------------------*/
 
 /**
- * @brief Filters the sensor data and sends the average value to the graficar task.
+ * @brief Filters the sensor data and sends the average value to the graficar
+ * task.
  * @param pvParameters unused.
  */
 static void vFilterTask(void *pvParameters) {
