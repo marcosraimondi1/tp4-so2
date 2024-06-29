@@ -15,6 +15,9 @@ Utilizando FreeRTOS, implementar las siguientes tareas:
 
 El valor de N del filtro promediador debe poder ser ajustado a traves de comandos enviados por UART.
 
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/6b4647c7-fdeb-473b-82ab-679428edb75e)
+
+
 ## FreeRTOS
 
 FreeRTOS es un sistema operativo en tiempo real (RTOS, por sus siglas en inglés) ampliamente utilizado en sistemas embebidos. Fue desarrollado por Richard Barry y es mantenido por Amazon Web Services (AWS). FreeRTOS es conocido por su simplicidad, portabilidad y tamaño reducido, lo que lo hace ideal para dispositivos con recursos limitados, como microcontroladores y pequeños sistemas integrados.
