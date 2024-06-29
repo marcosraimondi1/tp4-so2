@@ -240,6 +240,12 @@ static void vMonitorTask(void *pvParameter) {
 }
 ```
 
+Los estados posibles de las tareas son:
+
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/521b9ce4-32b4-4b5a-8f57-4fed37455a14)
+
+Para poder calcular el uso de CPU de cada tarea, se sigue la aplicacion de ejemplo CORTEX_LM3Sxxxx_Eclipse que se puede encontrar en la [version 8.2.3 de freeRTOS](http://sourceforge.net/projects/freertos/files/FreeRTOS/). Se agrego y modifico el archivo timertest.c, alli se configura un timer que permite contar los ticks que ocurren y poder medir los tiempos. Basicamente se configura la interrupcion del timer0 donde se incrementa un contador. 
+
 Se envia el estado por UART:
 
 ![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/dd1106e1-4da7-4ea6-a54c-193ac76c73af)
