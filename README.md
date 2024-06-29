@@ -2,6 +2,9 @@
 
 En este trabajo se realiza una implementacion de FreeRTOS en la placa [LM3S811](https://www.ti.com/lit/ug/spmu030b/spmu030b.pdf) (CORTEX-M3). Para ello se utilizara el emulador Qemu.
 
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/324b0d74-ed92-465e-8de2-c183a58260e6)
+
+
 ## Consigna
 
 Utilizando FreeRTOS, implementar las siguientes tareas:
@@ -302,6 +305,12 @@ arm-none-eabi-gdb gcc/RTOSDemo.axf -tui
 (gdb) target remote localhost:1234
 (gdb) break main
 ```
+
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/4fa0fe67-309a-48ae-a755-83e82f460f7b)
+
+## DEMO
+
+Se puede ver una grabacion de demostracion en [demo.mp4](./demo.mp4).
 
 ## Referencias
 - [FreeRTOS](https://www.freertos.org/)
