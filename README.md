@@ -277,6 +277,24 @@ En la documentacion de [FreeRTOS Checking Stack Overflow](https://www.freertos.o
 
 En este caso se utilizo el metodo 2, es un poco menos eficiente pero permite detectar mas casos de stack overflow.
 
+Para disminuir el uso de stack, se utilizaron variables `static` en algunos casos. Por ejemplo en la funcion de filtrado `vFilterTask`, se define el arreglo `values` como static:
+```C
+static void vFilterTask(void *pvParameters) {
+  static int values[MAX_FILTER_SIZE] = {0};
+...
+```
+Las variables static son equivalentes a variables globales en el sentido de que existen desde que se crea el programa. Las variables estaticas y globales se almacenan en la seccion **bss** y **data** de la memoria.
+La seccion de bss almacena variables globales y estaticas no inicializadas. La seccion data almacena las variables globles y estaticas inicializadas. Se pueden observar las mismas con la funcion `readelf`.
+
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/afeda1a3-fd60-4c30-a505-9de7b4c78920)
+
+Tener variables estaticas hace que el espacio que ocupa esa variable se asigne en compilacion, si ese tamano no es suficiente para los requerimientos dados, dara error:
+
+![image](https://github.com/marcosraimondi1/tp4-so2/assets/69517496/f4e0672c-dd9d-4489-a226-e3dae8889a2e)
+
+En cambio las variables locales se almacenan en el stack, si hay una estimacion incorrecta en la asignacion del stack, se ocasionara un stack overflow durante la ejecucion. Por lo que son necesarios mecaismos como `HighStackWaterMark` y el `vApplicationStackOverflowHook`. 
+
+
 ## Manejo de Interrupciones
 
 Para poder setear un handler de una interrupcion para crear una ISR (Interrupt Service Routine) custom es necesario registrar la funcion de la ISR en la tabla de interrupciones en el archivo [init/startup.c](./init/startup.c).
